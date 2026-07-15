@@ -5,7 +5,9 @@ import torch
 import soundfile as sf
 import numpy as np
 
-class WakeWordDataset():
+from torch.utils.data import Dataset
+
+class WakeWordDataset(Dataset):
     def __init__(self, data_folder, target_samplerate, p_silence=0.2, rng=np.random.default_rng(seed=49), transformer=None, target_transformer=None):
         self.target_samplerate = target_samplerate
         self.dir = data_folder
