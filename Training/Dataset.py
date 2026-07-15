@@ -13,7 +13,7 @@ class WakeWordDataset():
         self.target_transformer = target_transformer
         self.labels = self.__makelabels()
         self.rng = rng
-        self.p_silence = 0.2
+        self.p_silence = p_silence
 
     def load_audio(self, path):
         data, sr = sf.read(path, dtype='float32')           # shape: (n_samples,) or (n_samples, channels)
