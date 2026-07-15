@@ -2,7 +2,6 @@ import torch
 import soundfile as sf
 import torchaudio.functional as F
 import numpy as np
-import librosa as lb
 import os
 
 from Augment.augment_config import AugmentConfig

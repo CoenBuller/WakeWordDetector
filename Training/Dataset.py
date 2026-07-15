@@ -68,4 +68,6 @@ class WakeWordDataset(Dataset):
 
     def __len__(self):
         return len(self.labels)
-
+    
+    def return_labels(self):
+        return self.labels["label"]

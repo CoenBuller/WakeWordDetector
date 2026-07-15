@@ -41,3 +41,6 @@ class AugmentConfig():
 
     # Chance that the audio file is just silence
     p_silence: float = 0.2
+
+    # Training Sequence
+    batch_size: int = 64
