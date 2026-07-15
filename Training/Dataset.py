@@ -31,8 +31,10 @@ class WakeWordDataset():
             # It will be for binary classification
             if folder == "Positive": 
                 label = 1
-            else: 
+            elif folder == "Negative":
                 label = 0
+            else: 
+                continue
 
             for file in os.listdir(folder_path):
                 path = os.path.join(folder_path, file)
