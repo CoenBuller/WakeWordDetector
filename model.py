@@ -16,7 +16,7 @@ class Jarvis():
                             nn.Conv2d(16, 32, kernel_size=3, padding=1), # shape: (16, h, w) -> (32, h, w)
                             nn.ReLU(),
                             nn.BatchNorm2d(num_features=32),
-                            nn.Conv2d(32, 32, kernel_size=3, padding=1), # shape: (32, h, w) -> (32, h , w)
+                            nn.Conv2d(32, 32, kernel_size=3, padding=1), # shape: (32, h, w) -> (32, h, w)
                             nn.ReLU(),
                             nn.BatchNorm2d(num_features=32),
                             nn.AdaptiveAvgPool2d(output_size=(1, 8)) # shape: (32, h, w) -> (8, h, w)
