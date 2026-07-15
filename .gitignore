@@ -1,3 +1,6 @@
 */Data/*
 
 *.pyc
+
+*.toml
+*.lock
