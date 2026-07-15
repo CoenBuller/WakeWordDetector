@@ -6,12 +6,14 @@ import soundfile as sf
 import numpy as np
 
 class WakeWordDataset():
-    def __init__(self, data_folder, target_samplerate, transformer=None, target_transformer=None):
+    def __init__(self, data_folder, target_samplerate, p_silence=0.2, rng=np.random.default_rng(seed=49), transformer=None, target_transformer=None):
         self.target_samplerate = target_samplerate
         self.dir = data_folder
         self.transformer = transformer
         self.target_transformer = target_transformer
         self.labels = self.__makelabels()
+        self.rng = rng
+        self.p_silence = 0.2
 
     def load_audio(self, path):
         data, sr = sf.read(path, dtype='float32')           # shape: (n_samples,) or (n_samples, channels)
@@ -44,9 +46,14 @@ class WakeWordDataset():
         return pd.DataFrame(data={"path": paths, "label": labels})
     
     def __getitem__(self, idx):
-        item = self.labels.iloc[idx]
-        path, label = item["path"], item["label"]
-        audio = self.load_audio(path=path) # Audio has shape (n_samples) with the target samplerate
+        
+        if self.rng.random(size=1) <= self.p_silence:
+            audio = torch.zeros(self.target_samplerate, dtype=torch.float32)
+            label = 0
+        else:
+            item = self.labels.iloc[idx]
+            path, label = item["path"], item["label"]
+            audio = self.load_audio(path=path) # Audio has shape (n_samples) with the target samplerate
 
         # Apply transformations if given. They must be callable transformations
         if self.transformer:

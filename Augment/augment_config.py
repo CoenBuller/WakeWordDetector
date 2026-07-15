@@ -38,3 +38,6 @@ class AugmentConfig():
 
     # Random seed 
     seed: int = 49
+
+    # Chance that the audio file is just silence
+    p_silence: float = 0.2
