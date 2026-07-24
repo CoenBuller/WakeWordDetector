@@ -4,9 +4,10 @@ from dataclasses import dataclass
 class AugmentConfig():
     # log-mel spectogram parameters
     n_fft: int = 1024
-    sr: int = 15_872
+    sr: int = 16_128
     hop_length: int = 256    
     n_mels: int = 256
+
 
     # Waveform augment parameters 
     # Time shift
@@ -23,7 +24,7 @@ class AugmentConfig():
 
     # Noise
     background_folder: str = "Training/Data/Background"
-    p_noise: float = 0.7
+    p_noise: float = 0.3
     snr: tuple[int, int] = (5, 20)
 
     # RIR
@@ -44,3 +45,7 @@ class AugmentConfig():
 
     # Training Sequence
     batch_size: int = 64
+    learning_rate: float = 0.05
+    min_lr: float = 0.0001
+    epoch: int = 50
+

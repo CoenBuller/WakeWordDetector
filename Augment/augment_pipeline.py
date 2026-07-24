@@ -5,13 +5,12 @@ import numpy as np
 import os
 
 from Augment.augment_config import AugmentConfig
-from numpy.typing import NDArray
 from torch import Tensor
 from torchaudio.transforms import MelSpectrogram
 from torchaudio.functional import add_noise
 
 
-class MyPipeline(torch.nn.Module):
+class TrainPipeline(torch.nn.Module):
     def __init__(
         self,
         cfg: AugmentConfig, 
@@ -41,12 +40,14 @@ class MyPipeline(torch.nn.Module):
         return rirs
 
 
-    def forward(self, waveform: NDArray) -> torch.Tensor:
+    @torch.no_grad()
+    def forward(self, waveform: Tensor) -> torch.Tensor:
 
         if self.training:
             waveform_tensor = self._waveform_augment(waveform=waveform)
         else:
             waveform_tensor = torch.tensor(waveform, dtype=torch.float32)
+    
 
         # Convert to mel spectrogram
         spec = self.spec(waveform_tensor)
@@ -54,22 +55,24 @@ class MyPipeline(torch.nn.Module):
         # Apply SpecAugment
         spec = self._spec_augment(spec)
 
-        return spec
+        return spec.detach()
     
     def _apply_rir_augment(self, audio: Tensor):
         choice = self.rng.integers(0, 2)
         rir = self.rir_audio[choice]
         augmented = F.fftconvolve(audio, rir)
+        
+        augmented_length = len(augmented)
+        if augmented_length < self.cfg.sr:
+            zeros = torch.zeros_like(augmented, dtype=torch.float32)
+            zeros[:len(augmented)] = augmented
+            augmented = zeros
+            return augmented
+        
+        if augmented_length > self.cfg.sr:
+            return augmented[-self.cfg.sr:]
+        
         return augmented
-    
-    def _pitch_shift(self, audio: Tensor, n_steps: int) -> Tensor:
-        steps = int(self.rng.integers(low=-n_steps, high=n_steps))
-        # torchaudio.functional.pitch_shift takes (waveform, sample_rate, n_steps)
-        return F.pitch_shift(
-            waveform=audio,
-            sample_rate=self.cfg.sr,
-            n_steps=steps
-        )
  
     # Volume scaling by multiplying the audio signal by a random gain factor within a specified range.
     def _volume_scale(self, audio: Tensor, gain: float) -> Tensor:
@@ -87,6 +90,7 @@ class MyPipeline(torch.nn.Module):
         snr_tensor = torch.tensor(snr, dtype=torch.float32)
         choice = self.rng.integers(0, 2)
 
+        
         # Add white noise
         if choice == 0:
             noise = self.rng.normal(loc=0, scale=1, size=len(audio)).astype(dtype=np.float32)
@@ -95,24 +99,19 @@ class MyPipeline(torch.nn.Module):
         # Add a background file
         else:
             path = self.rng.choice(self.background_files)
+            path = os.path.join(self.cfg.background_folder, path)
             background, sr = sf.read(path)
-            background = torch.tensor(background, dtype=torch.float32)
-            noise = self._apply_rir_augment(audio=background)
+                
+            background_tensor = torch.tensor(background, dtype=torch.float32)
+
+            noise = self._apply_rir_augment(audio=background_tensor)
 
         noisy_audio = add_noise(waveform=audio, noise=noise, snr=snr_tensor)
         return noisy_audio
     
-    def _waveform_augment(self, waveform: NDArray) -> Tensor:
+    def _waveform_augment(self, waveform: Tensor) -> Tensor:
         # Move to Tensor immediately at the start of the augmentation pipeline
-        tensor = torch.tensor(waveform, dtype=torch.float32)
-
-        # Timeshift
-        if self.rng.random(1) <= self.cfg.p_time_shift:
-            tensor = self._time_shift(audio=tensor, shift=self.cfg.time_shift)
-        
-        # Pitch shift
-        if self.rng.random(1) <= self.cfg.p_pitch_shift:
-            tensor = self._pitch_shift(audio=tensor, n_steps=self.cfg.pitch_shift)
+        tensor = waveform
         
         # Volume scaling
         if self.rng.random(1) <= self.cfg.p_volume_scale:
@@ -131,7 +130,6 @@ class MyPipeline(torch.nn.Module):
     
     def _spec_augment(self, result: Tensor) -> Tensor:
         n_mels, n_frames = result.shape
-        cfg = self.config
         fill = result.mean()
         for _ in range(self.rng.integers(low=0, high=self.cfg.n_freq_masks)):
             f  = self.rng.integers(0, n_mels-1)
