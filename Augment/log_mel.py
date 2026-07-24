@@ -42,6 +42,8 @@ neg_mel = mel_transform(neg_signal)
 
 pos_mel /= torch.max(pos_mel)
 
+print(pos_mel.shape)
+
 fig, ax = plt.subplots(1, 2)
 ax[0].set_title("Positive sample")
 ax[0].imshow(pos_mel)
