@@ -3,6 +3,8 @@ import torch
 import queue
 import numpy as np
 from InferenceConfig import InferenceConfig
+from Augment.augment_config import AugmentConfig
+from Augment.augment_pipeline import AugPipeline
 from torchaudio.transforms import MelSpectrogram
 
 def configure_sounddevice(cfg):
@@ -32,13 +34,11 @@ def process_one_frame(chunk, buffer, model, spec, cfg):
         # Take exactly cfg.sr samples
         audio_segment = np.array(buffer[:cfg.sr], dtype=np.float32)
         tensor = torch.tensor(audio_segment, dtype=torch.float32)
-        
         # Add batch dimension
         mel = spec(tensor.unsqueeze(0))
         
         with torch.no_grad():
             pred = model(mel)
-            print(pred)
         
         # Assuming pred is a tensor, get value
         pred_value = pred.item() if torch.is_tensor(pred) else pred
@@ -50,14 +50,14 @@ def process_one_frame(chunk, buffer, model, spec, cfg):
 
 def main():
     cfg = InferenceConfig()
+    spec_cfg = AugmentConfig()
     configure_sounddevice(cfg)
     model = load_model(cfg)
     audio_queue = queue.Queue(maxsize=10)
     buffer = []  # Use list for buffer
-    spec = MelSpectrogram(
-                    sample_rate=cfg.sr, 
-                    n_fft=cfg.n_fft, 
-                    hop_length=cfg.hop_length,
+    spec = AugPipeline(
+                    cfg=spec_cfg,
+                    training=False
                     )
     
     spec = spec.to(cfg.device)
