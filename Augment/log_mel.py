@@ -30,19 +30,16 @@ pos_sample = os.path.join(pos_folder, os.listdir(pos_folder)[sample_num])
 neg_sample = os.path.join(neg_folder, os.listdir(neg_folder)[50])
 
 pos_signal, sr = load_audio(pos_sample)
-pos_signal = torchaudio.transforms.Resample(orig_freq=sr, new_freq=cfg.sr)(pos_signal)[0]
-
 neg_signal, sr = load_audio(neg_sample)
-neg_signal = torchaudio.transforms.Resample(orig_freq=sr, new_freq=cfg.sr)(neg_signal)[0]
 
+pos_mel = torch.log(mel_transform(pos_signal)[0])
+neg_mel = torch.log(mel_transform(neg_signal)[0])
 
+pos_mel[pos_mel == -torch.inf] = torch.kthvalue(pos_mel.unique(), k=2)[0]
+neg_mel[neg_mel == -torch.inf] = torch.kthvalue(neg_mel.unique(), k=2)[0]
 
-pos_mel = mel_transform(pos_signal)
-neg_mel = mel_transform(neg_signal)
-
-pos_mel /= torch.max(pos_mel)
-
-print(pos_mel.shape)
+pos_mel = (pos_mel - pos_mel.min()) / (pos_mel.max() - pos_mel.min() + 1e-8)
+neg_mel = (neg_mel - neg_mel.min()) / (neg_mel.max() - neg_mel.min() + 1e-8)
 
 fig, ax = plt.subplots(1, 2)
 ax[0].set_title("Positive sample")
