@@ -10,11 +10,11 @@ from torchaudio.transforms import MelSpectrogram
 from torchaudio.functional import add_noise
 
 
-class TrainPipeline(torch.nn.Module):
+class AugPipeline(torch.nn.Module):
     def __init__(
         self,
         cfg: AugmentConfig, 
-        training=False,
+        training=True,
         rng = np.random.default_rng(seed=49)
     ):
         super().__init__()
@@ -49,13 +49,27 @@ class TrainPipeline(torch.nn.Module):
             waveform_tensor = torch.tensor(waveform, dtype=torch.float32)
     
 
-        # Convert to mel spectrogram
-        spec = self.spec(waveform_tensor)
+        # Convert to log mel spectrum
+        spec = torch.log(self.spec(waveform_tensor)) 
+
+        # If the tensor is pure silence, the "try" block will fail, and we will return a tensor of zeros
+        try:
+            # Replace -inf values to the second lowest value in tensor
+            replace_val = torch.kthvalue(spec.unique(), k=2)[0]
+            spec = torch.where(spec == -torch.inf, replace_val, spec)
+        except RuntimeError: 
+            if -torch.inf in spec:
+                spec = torch.zeros_like(spec)
+
+            # Convert to [0, 1] range for consistent input
+            spec = (spec - spec.min()) / (spec.max() - spec.min() + 1e-8)
+            spec = torch.clamp(spec, min=0, max=1)  
 
         # Apply SpecAugment
-        spec = self._spec_augment(spec)
+        if self.training:
+            spec = self._spec_augment(spec)
 
-        return spec.detach()
+        return spec
     
     def _apply_rir_augment(self, audio: Tensor):
         choice = self.rng.integers(0, 2)
@@ -74,15 +88,11 @@ class TrainPipeline(torch.nn.Module):
         
         return augmented
  
-    # Volume scaling by multiplying the audio signal by a random gain factor within a specified range.
-    def _volume_scale(self, audio: Tensor, gain: float) -> Tensor:
-        gain = self.rng.uniform(1-gain, 1+gain)
-        return torch.clamp(audio * gain, -1.0, 1.0)
     
     # Time shifting by rolling the audio array by a random number of samples.
     def _time_shift(self, audio: Tensor, shift: float) -> Tensor:
         # Shift is a fraction of total length, e.g. (-0.2, 0.2)
-        shift = self.rng.uniform(-shift, shift)
+        shift = self.rng.uniform(-shift*2, shift)
         n = int(shift * len(audio))
         return torch.roll(audio, shifts=n, dims=0) 
     
@@ -112,10 +122,6 @@ class TrainPipeline(torch.nn.Module):
     def _waveform_augment(self, waveform: Tensor) -> Tensor:
         # Move to Tensor immediately at the start of the augmentation pipeline
         tensor = waveform
-        
-        # Volume scaling
-        if self.rng.random(1) <= self.cfg.p_volume_scale:
-            tensor = self._volume_scale(audio=tensor, gain=self.cfg.volume_scale)
 
         # RIR transformation
         if self.rng.random(1) <= self.cfg.p_rir:
@@ -130,7 +136,7 @@ class TrainPipeline(torch.nn.Module):
     
     def _spec_augment(self, result: Tensor) -> Tensor:
         n_mels, n_frames = result.shape
-        fill = result.mean()
+        fill = 0
         for _ in range(self.rng.integers(low=0, high=self.cfg.n_freq_masks)):
             f  = self.rng.integers(0, n_mels-1)
             result[f, :] = fill          # freq masking is fine for claps
