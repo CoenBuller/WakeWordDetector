@@ -67,6 +67,19 @@ class ValidateDataset(Dataset):
         path, label = item["path"], item["label"]
         audio = self.load_audio(path=path) # Audio has shape (n_samples) with the target samplerate
         mel = self.spec(audio)
+    
+        try:
+            # Replace -inf values to the second lowest value in tensor
+            replace_val = torch.kthvalue(mel.unique(), k=2)[0]
+            mel = torch.where(mel == -torch.inf, replace_val, mel)
+        except RuntimeError: 
+            if -torch.inf in mel:
+                mel = torch.zeros_like(mel)
+
+            # Convert to [0, 1] range for consistent input
+            mel = (mel - mel.min()) / (mel.max() - mel.min() + 1e-8)
+            mel = torch.clamp(mel, min=0, max=1)         
+
         return mel, label
 
     def __len__(self):
@@ -83,7 +96,6 @@ class LoadDataset(Dataset):
         self.labels = []
         self.paths = []
         self.items = self.__makelabels()
-
 
 
     def __makelabels(self):
