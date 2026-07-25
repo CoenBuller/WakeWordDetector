@@ -15,7 +15,6 @@ def one_epoch(
     
     total_loss = 0.
     n_samples = 0
-    last_loss = 0.
     model = model.to(device=device)
 
     p_bar = tqdm(enumerate(training_loader), total=len(training_loader))
@@ -36,6 +35,9 @@ def one_epoch(
         # Compute the loss and its gradients
         loss = loss_fn(outputs, labels)
         loss.backward()
+
+        # Gradient clipping
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
 
         # Adjust learning weights
         optimizer.step()
