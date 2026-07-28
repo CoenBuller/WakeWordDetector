@@ -6,8 +6,8 @@ from sklearn.model_selection import StratifiedShuffleSplit
 from torch import nn, Tensor
 from torch.optim import AdamW
 from torch.nn import BCELoss
-from torch.utils.data import WeightedRandomSampler, DataLoader
-from torch.optim.lr_scheduler import ReduceLROnPlateau, CosineAnnealingLR
+from torch.utils.data import DataLoader, WeightedRandomSampler
+from torch.optim.lr_scheduler import CosineAnnealingLR
 
 
 from Augment.augment_config import AugmentConfig
@@ -29,7 +29,7 @@ class WeightedFocalLoss(nn.Module):
             raise ValueError()
 
         self.gamma = gamma
-        self.bce_loss = BCELoss() # type: ignore
+        self.bce_loss = BCELoss(reduction="none") # type: ignore
 
     def forward(self, inputs, targets):
         BCE_loss = self.bce_loss(inputs, targets)
@@ -50,7 +50,7 @@ class WeightedFocalLoss(nn.Module):
 
 def format_e(n):
     a = '%E' % n
-    return a.split('E')[0].rstrip('0').rstrip('.') + 'E' + a.split('E')[1]
+    return a.split('E')[0].rstrip('0').rstrip('.') + 'e' + a.split('E')[1]
 
 def main():
     config = AugmentConfig()
@@ -71,7 +71,27 @@ def main():
     torch_generator = torch.Generator().manual_seed(config.seed)
 
     # Applies the data transformations
-    transformer = AugPipeline(cfg=config, training=True, rng=rng)
+    train_transformer = AugPipeline(
+                            cfg=config, 
+                            training=True, 
+                            spec_augment=True, 
+                            rng=rng
+                            )
+    
+    val_transformer = AugPipeline(
+                            cfg=config, 
+                            training=False, 
+                            spec_augment=False, 
+                            rng=rng
+                            )
+    val_augmentor = AugPipeline(
+                        cfg=config, 
+                        training=True,
+                        spec_augment=False, 
+                        rng=rng
+                        )
+
+
 
     # Load in entire dataset
     jarvis_dataset = LoadDataset(
@@ -83,58 +103,48 @@ def main():
     all_labels = jarvis_dataset.return_labels().to_numpy()
     print(f"Number of samples: {len(all_labels)} | Number of positive samples: {len(all_labels[all_labels == 1])}")
 
-
-
     # Use StratifiedShuffleSplit
-    sss = StratifiedShuffleSplit(n_splits=1, test_size=0.3, random_state=config.seed)
+    sss = StratifiedShuffleSplit(n_splits=1, test_size=0.7, random_state=config.seed)
     val_indices, train_indices = next(sss.split(np.arange(len(jarvis_dataset)), all_labels))
 
     # Convert indices to lists
     train_indices = np.array(train_indices.tolist())
     val_indices = np.array(val_indices.tolist())
+    print(f"Training length: {len(train_indices)}" )
     print(f"Validation length: {len(val_indices)}" )
-    print(f"Validation length: {len(train_indices)}" )
 
 
     # Create train/test split
     train_df = jarvis_dataset.__getitems__(train_indices)
     val_df = jarvis_dataset.__getitems__(val_indices)
-    print(f"Training: {val_df.value_counts("label")}")
-    print(f"Validation: {train_df.value_counts("label")}")
+    print(f"Training: {train_df.value_counts("label")}")
+    print(f"Validation: {val_df.value_counts("label")}")
 
     train_dataset = TrainDataset(
                             items=train_df, 
                             target_samplerate=config.sr,
-                            p_silence=config.p_silence,
                             rng=rng,
-                            transformer=transformer
+                            transformer=train_transformer
                             )
 
-    validation_dataset = ValidateDataset(items=val_df)
-
-    # # Calculate sample weights so that the proportions between positive and negative classes is equal
-    # labels = torch.tensor(train_dataset.return_labels())
-    # class_counts = torch.bincount(input=labels)
-    # class_weights = 1/class_counts.float()
-    # sample_weights = class_weights[labels].numpy()
-
-    # sampler = WeightedRandomSampler(
-    #                                 weights=sample_weights, #type: ignore
-    #                                 num_samples=len(labels), 
-    #                                 replacement=True,
-    #                                 generator=torch_generator
-    #                                 )
+    validation_dataset = ValidateDataset(
+                                items=val_df,
+                                transformer=val_transformer,
+                                augmentor=val_augmentor,
+                                n_augments=50
+                                )
 
     train_loader = DataLoader(
                         train_dataset, 
                         batch_size=config.batch_size, 
                         num_workers=6, 
-                        persistent_workers=True
+                        persistent_workers=True,
+                        shuffle=True
                         )
 
     validation_loader = DataLoader(
                             validation_dataset,
-                            batch_size=1
+                            batch_size=1,
                         )
 
     #  Models and optimizer
@@ -143,8 +153,10 @@ def main():
     # Class weights is based on class counts 
     labels = torch.tensor(train_dataset.return_labels())
     class_counts = torch.bincount(input=labels)
-    class_weights = class_counts / class_counts.sum()
-    loss = WeightedFocalLoss(device=device, alpha=class_weights)
+    class_weights = 1 / class_counts
+    class_weights /= class_weights.sum()
+    print(f"Class weights for Weighted Focal Loss: {class_weights}")
+    loss = BCELoss()
 
     optimizer = AdamW(
                     params=model.parameters(), 
@@ -160,13 +172,13 @@ def main():
     
 
     epoch_number = 0
-    min_val_loss = float("inf")
+    best_f1 = 0
     for epoch in range(config.epoch):
         print(f'EPOCH {epoch_number + 1}:')
 
         # Make sure gradient tracking is on, and do a pass over the data
         model.train(True)
-        train_loss, val_loss, val_accuracy = one_epoch(
+        train_loss, val_loss, stats = one_epoch(
                                                 epoch_index=epoch_number, 
                                                 model=model,
                                                 training_loader=train_loader,
@@ -177,14 +189,23 @@ def main():
                                                 )
 
 
-
-        print(f'LOSS train: {format_e(train_loss)} | LOSS validation: {format_e(val_loss)} | Accuracy: {format_e(val_accuracy)}')
+        print(
+            f"""
+STATS:
+    - Loss train: {format_e(train_loss)} 
+    - LOSS validation: {format_e(val_loss)} 
+    - Accuracy: {stats["accuracy"]:.3f}
+    - True Accuracy: {stats["true_accuracy"]:.3f}
+    - False Accuracy: {stats["false_accuracy"]:.3f}
+    - F1-score: {stats["f1"]:.3f}
+    """
+        )
 
         lr_scheduler.step()
         epoch_number += 1
-        if min_val_loss > val_loss:
-            min_val_loss = val_loss
-            torch.save(model, "Jarvis.pt")
+        if stats["f1"] > best_f1:
+            best_f1 = stats["f1"]
+            torch.save(model, "Jarvis_2_0.pt")
 
 if __name__ == "__main__":
     main()
