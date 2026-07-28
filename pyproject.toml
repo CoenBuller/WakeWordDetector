@@ -20,7 +20,14 @@ dependencies = [
     "torchinfo>=1.8.0",
     "torchvision>=0.27.1",
     "tqdm>=4.68.3",
-    "triton-xpu",
+    "triton-xpu; sys_platform == 'linux' or sys_platform == 'win32'",
+]
+
+[tool.uv]
+# Tells uv to only solve dependencies for platforms Intel Arc supports
+environments = [
+    "sys_platform == 'linux'",
+    "sys_platform == 'win32'",
 ]
 
 [[tool.uv.index]]
@@ -29,6 +36,7 @@ url = "https://download.pytorch.org/whl/xpu"
 explicit = true
 
 [tool.uv.sources]
-torchaudio = { index = "pytorch-xpu" }
-torchvision = { index = "pytorch-xpu" }
-triton-xpu = { index = "pytorch-xpu" }
+torch = [{ index = "pytorch-xpu", marker = "sys_platform == 'linux' or sys_platform == 'win32'" }]
+torchaudio = [{ index = "pytorch-xpu", marker = "sys_platform == 'linux' or sys_platform == 'win32'" }]
+torchvision = [{ index = "pytorch-xpu", marker = "sys_platform == 'linux' or sys_platform == 'win32'" }]
+triton-xpu = [{ index = "pytorch-xpu", marker = "sys_platform == 'linux' or sys_platform == 'win32'" }]

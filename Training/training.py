@@ -6,7 +6,7 @@ from sklearn.model_selection import StratifiedShuffleSplit
 from torch import nn, Tensor
 from torch.optim import AdamW
 from torch.nn import BCELoss
-from torch.utils.data import DataLoader, WeightedRandomSampler
+from torch.utils.data import DataLoader
 from torch.optim.lr_scheduler import CosineAnnealingLR
 
 
@@ -205,7 +205,7 @@ STATS:
         epoch_number += 1
         if stats["f1"] > best_f1:
             best_f1 = stats["f1"]
-            torch.save(model, "Jarvis_2_0.pt")
+            torch.save(model, "Jarvis_2_1.pt")
 
 if __name__ == "__main__":
     main()

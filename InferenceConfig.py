@@ -9,17 +9,17 @@ class InferenceConfig():
     hop_length: int = 256    
     n_mels: int = 256
 
-    
     # Sounddevice parameters
     sr: int = 16_128
     channels: int = 1
-    callback_time: float = 0.25 # s
+    callback_time: float = 0.1 # s
     dtype: object = np.float32
     input_device: int = 1
 
     # Model
-    model_path: str = "Jarvis_2_0.pt"
+    model_path: str = "Jarvis_2_1.pt"
     device: str = "cpu"
 
     # Inference
     conf_thresh: float = 0.5 # between [0, 1]
+    db_thresh: float = -50.

@@ -5,7 +5,8 @@ import numpy as np
 from InferenceConfig import InferenceConfig
 from Augment.augment_config import AugmentConfig
 from Augment.augment_pipeline import AugPipeline
-from torchaudio.transforms import MelSpectrogram
+
+from numpy.typing import NDArray
 
 def configure_sounddevice(cfg):
     sd.default.samplerate = cfg.sr
@@ -17,6 +18,28 @@ def load_model(cfg):
     model = torch.load(f=cfg.model_path, map_location=cfg.device, weights_only=False)
     model.eval()
     return model
+
+def calculate_dbfs(audio_frame: list | NDArray) -> float:
+    """
+    Calculates the RMS volume in dBFS for a numpy audio frame (float32, normalized -1 to 1).
+    """
+    if isinstance(audio_frame, list):
+        audio_frame = np.asarray(audio_frame)
+
+    # Calculate Root Mean Square (RMS)
+    rms = np.sqrt(np.mean(audio_frame**2))
+    if rms == 0:
+        return -100.0  # Silence
+    
+    # Convert RMS amplitude to dBFS
+    dbfs = 20 * np.log10(rms)
+    return dbfs
+
+def is_speech_active(audio_frame: np.ndarray, threshold_dbfs: float = -50.0) -> bool:
+    """
+    Returns True if frame volume exceeds the threshold.
+    """
+    return calculate_dbfs(audio_frame) > threshold_dbfs
 
 def process_one_frame(chunk, buffer, model, spec, cfg):
     # Ensure mono
@@ -30,22 +53,24 @@ def process_one_frame(chunk, buffer, model, spec, cfg):
     # Keep only last cfg.sr samples
     if len(buffer) >= cfg.sr:
         buffer = buffer[-cfg.sr:]
-    
-        # Take exactly cfg.sr samples
-        audio_segment = np.array(buffer[:cfg.sr], dtype=np.float32)
-        tensor = torch.tensor(audio_segment, dtype=torch.float32)
-        # Add batch dimension
-        mel = spec(tensor.unsqueeze(0))
-        
-        with torch.no_grad():
-            pred = model(mel)
-        
-        # Assuming pred is a tensor, get value
-        pred_value = pred.item() if torch.is_tensor(pred) else pred
-        
-        if pred_value >= cfg.conf_thresh:
-            print(pred_value)
-            return True, buffer
+        if is_speech_active(audio_frame=buffer, threshold_dbfs=cfg.db_thresh):
+
+
+            # Take exactly cfg.sr samples
+            audio_segment = np.array(buffer[:cfg.sr], dtype=np.float32)
+            tensor = torch.tensor(audio_segment, dtype=torch.float32)
+            # Add batch dimension
+            mel = spec(tensor.unsqueeze(0))
+            
+            with torch.no_grad():
+                pred = model(mel)
+            
+            # Assuming pred is a tensor, get value
+            pred_value = pred.item() if torch.is_tensor(pred) else pred
+            
+            if pred_value >= cfg.conf_thresh:
+                print(pred_value)
+                return True, buffer
     
     return False, buffer
 
