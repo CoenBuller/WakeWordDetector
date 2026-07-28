@@ -11,83 +11,95 @@ class Stats():
         self.thresh = threshold
 
     def __call__(self):
-        outputs = torch.tensor(self.outputs, dtype=torch.int8, requires_grad=False).detach()
+        outputs = torch.tensor(self.outputs, dtype=torch.float32, requires_grad=False).detach()
+        targets = torch.tensor(self.targets, dtype=torch.float32, requires_grad=False).detach()
+        
         rounded_out = torch.round(outputs - (self.thresh - 0.5))
-        targets = torch.tensor(self.targets, dtype=torch.int8, requires_grad=False).detach()
-
+        
         pos = targets == 1
         neg = targets == 0
-
-        n_pos = torch.sum(pos)
-        n_neg = torch.sum(neg)
-
-        true_pos = torch.sum(rounded_out == 1 & pos)
-        true_neg = torch.sum(rounded_out == 0 & neg)
-
-        false_neg = torch.sum(rounded_out == 0 & pos)
-        false_pos = torch.sum(rounded_out == 1 & neg)
-
-        try:
-            precision = true_pos / n_pos
-            accuracy = (true_pos + true_neg) / (n_pos + n_neg)
-            recall = true_pos / torch.sum(true_pos | false_neg)
-            f1_score = 2 * precision * recall / (precision + recall)
-
-            true_acc = true_pos / n_pos
-            true_neg = true_neg / n_neg
-
-            roc, thresholds = self._roc_auc(
-                                        outputs=outputs, 
-                                        pos=pos, 
-                                        neg=neg, 
-                                        n_thresholds=200
-                                        )
-            stats = {
-                    "f1": f1_score.item(), 
-                    "precision": precision.item(), 
-                    "recall": recall.item(), 
-                    "accuracy": accuracy.item(), 
-                    "true_accuracy": true_acc.item(), 
-                    "true_negative": true_acc.item(),
-                    "roc": roc,
-                    "thresholds": thresholds
-                    }
-            
-        except ZeroDivisionError:
-            stats = {}
-            print("There were no positive cases in the validation dataset")
-
+        
+        n_pos = torch.sum(pos).float()
+        n_neg = torch.sum(neg).float()
+        n_total = n_pos + n_neg
+        
+        # FIXED: Proper operator precedence with parentheses
+        true_pos = torch.sum((rounded_out == 1) & pos).float()
+        true_neg = torch.sum((rounded_out == 0) & neg).float()
+        false_neg = torch.sum((rounded_out == 0) & pos).float()
+        false_pos = torch.sum((rounded_out == 1) & neg).float()
+        
+        # FIXED: Handle division by zero
+        if n_pos == 0 or n_neg == 0:
+            print("Warning: Dataset has only one class. Metrics may be undefined.")
+            return {
+                "f1": 0.0,
+                "precision": 0.0,
+                "recall": 0.0,
+                "accuracy": 0.0,
+                "true_accuracy": 0.0,
+                "false_accuracy": 0.0,
+                "roc": [],
+                "thresholds": []
+            }
+        
+        # FIXED: Correct recall calculation
+        precision = true_pos / (true_pos + false_pos) if (true_pos + false_pos) > 0 else torch.tensor(0.0)
+        recall = true_pos / n_pos if n_pos > 0 else torch.tensor(0.0)
+        accuracy = (true_pos + true_neg) / n_total if n_total > 0 else torch.tensor(0.0)
+        f1_score = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else torch.tensor(0.0)
+        
+        true_acc = true_pos / n_pos
+        false_acc = true_neg / n_neg
+        
+        roc, thresholds = self._roc_auc(
+            outputs=outputs,
+            pos=pos,
+            neg=neg,
+            n_thresholds=200
+        )
+        
+        stats = {
+            "f1": f1_score.item(),
+            "precision": precision.item(),
+            "recall": recall.item(),
+            "accuracy": accuracy.item(),
+            "true_accuracy": true_acc.item(),
+            "false_accuracy": false_acc.item(),
+            "roc": roc,
+            "thresholds": thresholds
+        }
+        
         return stats
 
     def _roc_auc(self, outputs: Tensor, pos: Tensor, neg: Tensor, n_thresholds: int = 200):
         thresholds = torch.linspace(0, 1, steps=n_thresholds)
-
-        n_pos = torch.sum(pos)
-        n_neg = torch.sum(neg)
-
+        
+        n_pos = torch.sum(pos).float()
+        n_neg = torch.sum(neg).float()
+        
         roc = []
-
+        
+        # Handle case where one class is missing
+        if n_pos == 0 or n_neg == 0:
+            return [], thresholds
+        
         for thresh in thresholds:
             rounded_outputs = torch.round(outputs - (thresh - 0.5))
-
-            true_pos = torch.sum(rounded_outputs == 1 & pos)
-            false_pos = torch.sum(rounded_outputs == 1 & neg)
-
+            
+            true_pos = torch.sum((rounded_outputs == 1) & pos).float()
+            false_pos = torch.sum((rounded_outputs == 1) & neg).float()
+            
             tpr = true_pos / n_pos
             fpr = false_pos / n_neg
-
-            roc.append((tpr.item(), fpr.item()))
-
-        return roc, thresholds
-
-
             
+            roc.append((tpr.item(), fpr.item()))
+        
+        return roc, thresholds
+    
     def add(self, targets: Tensor, outputs: Tensor):
-        for target_val in targets:
-            self.targets.append(target_val)
-
-        for output_val in outputs:
-            self.outputs.append(output_val)
+        self.targets.extend(targets.detach().cpu().tolist())
+        self.outputs.extend(outputs.detach().cpu().tolist())
         
 def one_epoch(
         epoch_index, 
@@ -151,7 +163,6 @@ def one_epoch(
             # Make predictions for this batch
             outputs = model(inputs)
             stats.add(targets=labels, outputs=outputs)
-
 
             # Compute the loss and its gradients
             loss = loss_fn(outputs, labels)

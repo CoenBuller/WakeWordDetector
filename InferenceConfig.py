@@ -18,7 +18,7 @@ class InferenceConfig():
     input_device: int = 1
 
     # Model
-    model_path: str = "Jarvis.pt"
+    model_path: str = "Jarvis_2_0.pt"
     device: str = "cpu"
 
     # Inference

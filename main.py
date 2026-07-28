@@ -44,12 +44,26 @@ def process_one_frame(chunk, buffer, model, spec, cfg):
         pred_value = pred.item() if torch.is_tensor(pred) else pred
         
         if pred_value >= cfg.conf_thresh:
+            print(pred_value)
             return True, buffer
     
     return False, buffer
 
 def main():
-    cfg = InferenceConfig()
+
+    # Print host APIs available on your laptop (e.g., MME, WASAPI, DirectSound, ALSA, CoreAudio)
+    print("--- Available Host APIs ---")
+    for api in sd.query_hostapis():
+        print(f"Index {api['name']}: {api['name']}")
+
+    print("\n--- Detailed Device Scan ---")
+    devices = sd.query_devices()
+    for index, dev in enumerate(devices):
+        # This reveals hidden or native channels that might not show up on your default system list
+        print(f"ID {index}: {dev['name']} | Input Chans: {dev['max_input_channels']} | API: {sd.query_hostapis(dev['hostapi'])['name']}")
+
+    d = input("\nType the index number of input device you want to use (e.g. 1).")
+    cfg = InferenceConfig(input_device=int(d))
     spec_cfg = AugmentConfig()
     configure_sounddevice(cfg)
     model = load_model(cfg)

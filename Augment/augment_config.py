@@ -40,12 +40,9 @@ class AugmentConfig():
     # Random seed 
     seed: int = 49
 
-    # Chance that the audio file is just silence
-    p_silence: float = 0.2
-
     # Training Sequence
     batch_size: int = 64
-    learning_rate: float = 0.05
+    learning_rate: float = 0.005
     min_lr: float = 0.0001
     epoch: int = 50
 

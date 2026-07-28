@@ -15,6 +15,7 @@ class AugPipeline(torch.nn.Module):
         self,
         cfg: AugmentConfig, 
         training=True,
+        spec_augment=True,
         rng = np.random.default_rng(seed=49)
     ):
         super().__init__()
@@ -23,6 +24,8 @@ class AugPipeline(torch.nn.Module):
 
         self.cfg = cfg
         self.rng = rng
+        self.training = training
+        self.spec_augment_enabled = spec_augment
 
         if training:
             self.rir_audio = self._load_rir_files("Training/Data/RIR.wav", "Training/Data/RIR_2.wav")
@@ -46,7 +49,7 @@ class AugPipeline(torch.nn.Module):
         if self.training:
             waveform_tensor = self._waveform_augment(waveform=waveform)
         else:
-            waveform_tensor = torch.tensor(waveform, dtype=torch.float32)
+            waveform_tensor = waveform.to(torch.float32)
     
 
         # Convert to log mel spectrum
@@ -61,12 +64,12 @@ class AugPipeline(torch.nn.Module):
             if -torch.inf in spec:
                 spec = torch.zeros_like(spec)
 
-            # Convert to [0, 1] range for consistent input
-            spec = (spec - spec.min()) / (spec.max() - spec.min() + 1e-8)
-            spec = torch.clamp(spec, min=0, max=1)  
+        # Convert to [0, 1] range for consistent input
+        spec = (spec - spec.min()) / (spec.max() - spec.min() + 1e-8)
+        spec = torch.clamp(spec, min=0, max=1)  
 
         # Apply SpecAugment
-        if self.training:
+        if self.training and self.spec_augment_enabled:
             spec = self._spec_augment(spec)
 
         return spec
@@ -118,10 +121,16 @@ class AugPipeline(torch.nn.Module):
 
         noisy_audio = add_noise(waveform=audio, noise=noise, snr=snr_tensor)
         return noisy_audio
+
+
     
     def _waveform_augment(self, waveform: Tensor) -> Tensor:
         # Move to Tensor immediately at the start of the augmentation pipeline
         tensor = waveform
+
+        # Time shift 
+        if self.rng.random(1) <= self.cfg.p_time_shift:
+            tensor = self._time_shift(audio=tensor, shift=self.cfg.time_shift)
 
         # RIR transformation
         if self.rng.random(1) <= self.cfg.p_rir:
