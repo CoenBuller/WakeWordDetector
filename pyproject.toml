@@ -14,7 +14,7 @@ dependencies = [
     "sounddevice>=0.5.5",
     "soundfile>=0.14.0",
     "tensorboard>=2.21.0",
-    "torch>=2.12.1",
+    "torch>=2.13.0",
     "torchaudio>=2.11.0",
     "torchcodec>=0.14.0",
     "torchinfo>=1.8.0",
@@ -29,7 +29,6 @@ url = "https://download.pytorch.org/whl/xpu"
 explicit = true
 
 [tool.uv.sources]
-torch = { index = "pytorch-xpu" }
 torchaudio = { index = "pytorch-xpu" }
 torchvision = { index = "pytorch-xpu" }
 triton-xpu = { index = "pytorch-xpu" }
